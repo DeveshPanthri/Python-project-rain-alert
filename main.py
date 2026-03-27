@@ -1,38 +1,63 @@
-# To run and test the code you need to update 4 places:
-# 1. Change MY_EMAIL/MY_PASSWORD to your own details.
-# 2. Go to your email provider and make it allow less secure apps.
-# 3. Update the SMTP ADDRESS to match your email provider.
-# 4. Update birthdays.csv to contain today's month and day.
-# See the solution video in the 100 Days of Python Course for explainations.
-
-
-from datetime import datetime
-import pandas
-import random
-import smtplib
+import requests
 import os
+# **************************twilio message *****************************
+from twilio.rest import Client
 
-# import os and use it to get the Github repository secrets
-MY_EMAIL = os.environ.get("MY_EMAIL")
-MY_PASSWORD = os.environ.get("MY_PASSWORD")
 
-today = datetime.now()
-today_tuple = (today.month, today.day)
+api_key = os.environ.get("api_key")
+account_sid = os.environ.get("account_sid")
+# for security env setup
+# export file name
+# variable name=value // ex ->auth_token = e196dfa9db906c57f5a7ed915a8445c2
+# env to cheack
+# auth_token = 'e196dfa9db906c57f5a7ed915a8445c2'
+auth_token = os.environ.get("auth_token")
+# client = Client(account_sid, auth_token)
 
-data = pandas.read_csv("birthdays.csv")
-birthdays_dict = {(data_row["month"], data_row["day"])                  : data_row for (index, data_row) in data.iterrows()}
-if today_tuple in birthdays_dict:
-    birthday_person = birthdays_dict[today_tuple]
-    file_path = f"letter_templates/letter_{random.randint(1, 3)}.txt"
-    with open(file_path) as letter_file:
-        contents = letter_file.read()
-        contents = contents.replace("[NAME]", birthday_person["name"])
+# **********************************************************************
+parameter={
+    "lat": 22.3193,   # Hong Kong (100% rain today)
+    "lon": 114.1694,    
+    "appid":api_key,
+    "cnt":4 # it's called count tells us thr no entries we want
+}
 
-    with smtplib.SMTP("YOUR EMAIL PROVIDER SMTP SERVER ADDRESS") as connection:
-        connection.starttls()
-        connection.login(MY_EMAIL, MY_PASSWORD)
-        connection.sendmail(
-            from_addr=MY_EMAIL,
-            to_addrs=birthday_person["email"],
-            msg=f"Subject:Happy Birthday!\n\n{contents}"
-        )
+respone=requests.get(url="https://api.openweathermap.org/data/2.5/forecast",params=parameter)
+# this api tell you every 3 hours update of weather for 5 days that gives us 40 entries
+# this api give weather condition in id (for ex 804- cloudy)
+respone.raise_for_status() # for error that 400 code
+weather_data=respone.json()
+# list=data['list'][0]['weather'][0]['id']
+will_rain=False
+
+for hour_data in weather_data['list']:
+    condition_code=hour_data["weather"][0]["id"]  # 0 as we want 1st and it has only one value
+    if condition_code<700:
+        will_rain=True
+        break
+
+if will_rain:
+    client=Client(account_sid,auth_token)
+    message = client.messages.create(
+        from_='whatsapp:+14155238886',
+        body='Baarish hogi bhai! Umbrella le liyo. ☔', # Use body instead of content_sid
+        to='whatsapp:+919084080626'
+    )
+    print(f"Message Sent! SID: {message.sid}")
+
+
+    """
+    OPENWEATHERMAP API - WEATHER ID REFERENCE TABLE
+    ------------------------------------------------
+    Range | Category      | Examples / Description
+    ------------------------------------------------
+    2xx   | Thunderstorm  | 200 (Light rain), 232 (Heavy drizzle)
+    3xx   | Drizzle       | 300 (Light intensity drizzle)
+    5xx   | Rain          | 500 (Light rain), 502 (Heavy rain)
+    6xx   | Snow          | 600 (Light snow), 615 (Rain & snow)
+    7xx   | Atmosphere    | 701 (Mist), 741 (Fog), 781 (Tornado)
+    800   | Clear         | 800 (Clear sky)
+    80x   | Clouds        | 801 (Few clouds), 804 (Overcast)
+
+    Logic: condition_code < 700 covers Storms, Drizzle, Rain, and Snow.
+    """
